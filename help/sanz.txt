@@ -1,0 +1,3 @@
+
+The script mysql2sqlite.sh has been downloaded from:
+- https://raw.github.com/gist/1287049/mysql2sqlite.sh
