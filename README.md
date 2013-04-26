@@ -13,7 +13,7 @@ Put the following files into the correct location:
 
 Edit the config/config.ini.php and add in the [database] section:
 - adapter=Pdo_Sqlite
-- dbname=saltos_piwik.sqlite
+- dbname=piwik.sqlite
 - schema=Sqlite
 
 And then, execute piwik...
