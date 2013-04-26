@@ -233,8 +233,8 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 
 	/**
 	 * translate the 'ON DUPLICATE KEY UPDATE' MySQL feature to SQLite
+	 * copied from http://blog.straylightrun.net/wp-content/uploads/2009/08/Database.phps
 	 */
-
 	private function _onDuplicateKey($sql, $bind)
 	{
 		preg_match('/ on duplicate key update.*$/si', $sql, $matches);
