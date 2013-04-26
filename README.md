@@ -23,7 +23,7 @@ How convert the DB from MySQL to SQLite
 =======================================
 
 Go to the help directory and execute the script
-# convert.sh USERNAME PASSWORD DATABASE
+- convert.sh USERNAME PASSWORD DATABASE
 
 This script execute the mysql2sqlite.sh, fixblob.php and sqlite3 to generate the new piwik.sqlite file that contains all database migrated to SQLite.
 
