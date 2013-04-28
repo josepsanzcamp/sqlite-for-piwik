@@ -43,6 +43,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 		// for compatibility with MySQL queries
 		$this->_connection->sqliteCreateFunction("GET_LOCK",array($this, '_get_lock'));
 		$this->_connection->sqliteCreateFunction("RELEASE_LOCK",array($this, '_release_lock'));
+		$this->_connection->sqliteCreateFunction("VARIABLE_EMULATION",array($this, '_variable_emulation'));
 
 		/**
 		 * for compatibility with MySQL queries
@@ -96,7 +97,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 	 */
 	public function checkServerVersion()
 	{
-		// TODO BY SANZ
+		// NOTHING TO DO BY SANZ
 	}
 
 	/**
@@ -106,7 +107,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 	 */
 	public function checkClientVersion()
 	{
-		// TODO BY SANZ
+		// NOTHING TO DO BY SANZ
 	}
 
 	/**
@@ -184,13 +185,29 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 		// for compatibility with MySQL queries
 		if(is_string($sql)) {
 			if(stripos($sql,"on duplicate key")!==false) {
-				list($sql, $bind) = $this->_onDuplicateKey($sql, $bind);
+				$sql=str_ireplace("insert","insert or replace",$sql);
+				$sql=substr($sql,0,stripos($sql,"on duplicate key"));
+				$count=substr_count($sql,"?");
+				$bind=array_slice($bind,0,$count);
 			}
 			if(stripos($sql,"insert ignore")!==false) {
 				$sql=str_ireplace("insert ignore","insert or replace",$sql);
 			}
 			if(strpos($sql,":=")!==false && strpos($sql,"@")!==false) {
-				$sql=""; // TODO BY SANZ
+				$pos=strpos($sql,"@");
+				while($pos!==false) {
+					$pos2=$pos+1;
+					while($sql[$pos2]!="=") $pos2++;
+					$pos2++;
+					while($sql[$pos2]==" ") $pos2++;
+					while(!in_array($sql[$pos2],array(" ","\t","\n"))) $pos2++;
+					$sql=substr($sql,0,$pos)."VARIABLE_EMULATION('".str_replace(array("@",":=","=","_"),array("$","_","__","="),substr($sql,$pos,$pos2-$pos))."')".substr($sql,$pos2);
+					$pos=strpos($sql,"@");
+				}
+				// THIS LINES FIXES SOME BUGS THAT MUST BE FIXED IN THE CORE
+				$sql=str_replace("log_action.name,","log_action.name as name,",$sql);
+				$sql=str_replace("`type`","type",$sql);
+				$sql=str_replace("`url_prefix`","url_prefix",$sql);
 			}
 		}
 
@@ -232,25 +249,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 	}
 
 	/**
-	 * translate the 'ON DUPLICATE KEY UPDATE' MySQL feature to SQLite
-	 * copied from http://blog.straylightrun.net/wp-content/uploads/2009/08/Database.phps
-	 */
-	private function _onDuplicateKey($sql, $bind)
-	{
-		preg_match('/ on duplicate key update.*$/si', $sql, $matches);
-		$clause = $matches[0];
-		$numParams = substr_count($clause, '?');
-		$bind = array_slice($bind, 0, -$numParams);
-
-		$sql = str_replace($clause, '', $sql);
-		$sql = preg_replace('/^insert /i', 'insert or replace ', $sql);
-
-		return array($sql, $bind);
-	}
-
-	/**
 	 * for compatibility with MySQL queries
-	 * copied from code/php/functions.php of the SaltOS project
 	 */
 	public function _get_lock() {
 		return 1;
@@ -260,6 +259,15 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 		return 1;
 	}
 
+	public function _variable_emulation($arg) {
+		$var=substr($arg,0,strpos($arg,"="));
+		return eval("global $var; return $arg;");
+	}
+
+	/**
+	 * for compatibility with MySQL queries
+	 * copied from code/php/functions.php of the SaltOS project
+	 */
 	private function _semaphore_acquire($file,$timeout=100000) {
 		global $_SEMAPHORE;
 		if(!isset($_SEMAPHORE)) $_SEMAPHORE=array();
