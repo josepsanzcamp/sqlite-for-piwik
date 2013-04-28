@@ -253,11 +253,11 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 	 * copied from code/php/functions.php of the SaltOS project
 	 */
 	public function _get_lock() {
-		// NOTHING TO DO
+		return 1;
 	}
 
 	public function _release_lock() {
-		// NOTHING TO DO
+		return 1;
 	}
 
 	private function _semaphore_acquire($file,$timeout=100000) {
@@ -321,14 +321,6 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 	 * for compatibility with MySQL queries
 	 * copied from code/database/pdo_sqlite.php of the SaltOS project
 	 */
-	public function _group_concat_check() {
-		$query="SELECT GROUP_CONCAT(1)";
-		capture_next_error();
-		db_query_pdo_sqlite($query);
-		$error=get_clear_error();
-		return !$error?true:false;
-	}
-
 	public function _group_concat_step($context,$rows,$string,$separator=",") {
 		if($context!="") $context.=$separator;
 		$context.=$string;
