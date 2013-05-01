@@ -209,15 +209,42 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 				$sql=str_replace("`type`","type",$sql);
 				$sql=str_replace("`url_prefix`","url_prefix",$sql);
 			}
+			if(stripos($sql,"create table")!==false && stripos($sql,"index ")!==false) {
+				$pos=stripos($sql,"create table")+12;
+				$pos2=strpos($sql,"(");
+				$table=trim(substr($sql,$pos,$pos2-$pos));
+				$indexes=array();
+				$sql=explode("\n",$sql);
+				foreach($sql as $key=>$val) {
+					if(stripos($val,"index ")!==false) {
+						$val=trim($val);
+						if(substr($val,-1,1)==",") $val=substr($val,0,-1);
+						$val=str_ireplace("index ","create index ${table}_",$val);
+						$val=str_replace("("," ON ${table}(",$val);
+						$indexes[]=$val;
+						unset($sql[$key]);
+					}
+				}
+				$sql=implode("\n",$sql);
+				$pos=strrpos($sql,",");
+				$sql=substr_replace($sql,"",$pos,1);
+				$sql=str_ireplace("default charset=utf8","",$sql);
+				$sql=array_merge(array($sql),$indexes);
+			}
 		}
 
 		//~ file_put_contents("log.txt",$sql."\n",FILE_APPEND);
 		//~ file_put_contents("log.txt",print_r($bind,true)."\n",FILE_APPEND);
 
-		if(!is_string($sql))
+		if (!is_array($bind)) {
+			$bind = array($bind);
+		}
+
+		if(is_array($sql))
 		{
 			if($this->_semaphore_acquire("tmp/sqlite.sem")) {
-				$result=parent::query($sql, $bind);
+				$result=parent::query(array_shift($sql),$bind);
+				foreach($sql as $query) parent::query($query);
 				$this->_semaphore_release("tmp/sqlite.sem");
 				return $result;
 			}
@@ -226,10 +253,6 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 
 		if(isset($this->cachePreparedStatement[$sql]))
 		{
-			if (!is_array($bind)) {
-				$bind = array($bind);
-			}
-
 			if($this->_semaphore_acquire("tmp/sqlite.sem")) {
 				$stmt = $this->cachePreparedStatement[$sql];
 				$stmt->execute($bind);
