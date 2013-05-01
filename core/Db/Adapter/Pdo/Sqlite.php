@@ -68,6 +68,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 		$this->_connection->sqliteCreateFunction("MINUTE",array($this,"_minute"));
 		$this->_connection->sqliteCreateFunction("SECOND",array($this,"_second"));
 		$this->_connection->sqliteCreateFunction("MD5",array($this,"_md5"));
+		$this->_connection->sqliteCreateFunction("CRC32",array($this,"_crc32"));
 
 		return $this->_connection;
 	}
@@ -428,4 +429,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 		return md5($temp);
 	}
 
+	public function _crc32($temp) {
+		return crc32($temp);
+	}
 }
