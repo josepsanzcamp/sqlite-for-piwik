@@ -200,7 +200,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 			if(stripos($sql,"insert ignore")!==false) {
 				$sql=str_ireplace("insert ignore","insert or replace",$sql);
 			}
-			if(strpos($sql,":=")!==false && strpos($sql,"@")!==false) {
+			if(stripos($sql,"select")!==false && strpos($sql,":=")!==false && strpos($sql,"@")!==false) {
 				$pos=strpos($sql,"@");
 				while($pos!==false) {
 					$pos2=$pos+1;
