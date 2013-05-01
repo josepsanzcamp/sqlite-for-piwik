@@ -7,14 +7,12 @@ This repository contains the files needed to use Piwik with SQLite instead of My
 How to use it
 =============
 
-Put the following files into the correct location:
+Put the following file into the correct location:
 - core/Db/Adapter/Pdo/Sqlite.php
-- core/Db/Schema/Sqlite.php
 
 Edit the config/config.ini.php and add in the [database] section:
 - adapter=Pdo_Sqlite
 - dbname=piwik.sqlite
-- schema=Sqlite
 
 And then, execute piwik...
 

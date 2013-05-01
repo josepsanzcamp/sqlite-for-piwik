@@ -184,6 +184,13 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 
 		// for compatibility with MySQL queries
 		if(is_string($sql)) {
+			if(stripos($sql,"show tables like")!==false) {
+				$sql=str_ireplace("show tables like","select name from sqlite_master where type='table' and name like",$sql);
+				$sql=str_replace("\\_","_",$sql);
+			}
+			if(stripos($sql,"truncate")!==false) {
+				$sql=str_ireplace("truncate","delete from",$sql);
+			}
 			if(stripos($sql,"on duplicate key")!==false) {
 				$sql=str_ireplace("insert","insert or replace",$sql);
 				$sql=substr($sql,0,stripos($sql,"on duplicate key"));
