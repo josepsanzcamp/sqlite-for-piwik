@@ -8,7 +8,10 @@ How to use it
 =============
 
 Put the following file into the correct location:
+- libs/mysql2sqlite.php
 - core/Db/Adapter/Pdo/Sqlite.php
+- core/Tracker.php
+- core/Tracker/Db/Pdo/Sqlite.php
 
 Edit the config/config.ini.php and add in the [database] section:
 - adapter=Pdo_Sqlite
