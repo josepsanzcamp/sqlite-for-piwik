@@ -144,12 +144,7 @@ class Piwik_Tracker_Db_Pdo_Sqlite extends Piwik_Tracker_Db
 				$timer = $this->initProfiler();
 			}
 
-			if(!is_array($bind))
-			{
-				$bind = array( $bind );
-			}
-
-			if(_mysql2sqlite_semaphore_acquire(_mysql2sqlite_semaphore_file(),_mysql2sqlite_semaphore_timeout()))
+			if(_mysql2sqlite_semaphore_acquire())
 			{
 				if(is_array($sql))
 				{
@@ -166,10 +161,10 @@ class Piwik_Tracker_Db_Pdo_Sqlite extends Piwik_Tracker_Db
 				{
 					$this->recordQueryProfile($sql, $timer);
 				}
-				_mysql2sqlite_semaphore_release(_mysql2sqlite_semaphore_file());
+				_mysql2sqlite_semaphore_release();
 				return $sth;
 			}
-			throw new Exception("Can not acquire semaphore "._mysql2sqlite_semaphore_file());
+			throw new Exception("Can not acquire semaphore");
 		} catch (PDOException $e) {
 			throw new Piwik_Tracker_Db_Exception("Error query: ".$e->getMessage() . "
 								In query: $sql

@@ -158,11 +158,7 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 			list($sql,$bind)=_mysql2sqlite_convert($sql,$bind);
 		}
 
-		if (!is_array($bind)) {
-			$bind = array($bind);
-		}
-
-		if(_mysql2sqlite_semaphore_acquire(_mysql2sqlite_semaphore_file(),_mysql2sqlite_semaphore_timeout()))
+		if(_mysql2sqlite_semaphore_acquire())
 		{
 			if(is_array($sql))
 			{
@@ -181,10 +177,10 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 				$this->cachePreparedStatement[$sql] = $stmt;
 				$stmt->execute($bind);
 			}
-			_mysql2sqlite_semaphore_release(_mysql2sqlite_semaphore_file());
+			_mysql2sqlite_semaphore_release();
 			return $stmt;
 		}
-		throw new Exception("Can not acquire semaphore "._mysql2sqlite_semaphore_file());
+		throw new Exception("Can not acquire semaphore");
 	}
 }
 ?>

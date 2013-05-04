@@ -5,11 +5,9 @@ function _mysql2sqlite_debug() {
 
 function _mysql2sqlite_connect($conn) {
 	$conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_SILENT);
-	//~ $conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
+	$conn->setAttribute(PDO::ATTR_TIMEOUT,0);
 	$conn->query("PRAGMA cache_size=2000");
 	$conn->query("PRAGMA synchronous=OFF");
-	$conn->query("PRAGMA count_changes=OFF");
-	$conn->query("PRAGMA temp_store=MEMORY");
 	$conn->query("PRAGMA foreign_keys=OFF");
 	$conn->sqliteCreateFunction("GET_LOCK","_mysql2sqlite_get_lock");
 	$conn->sqliteCreateFunction("RELEASE_LOCK","_mysql2sqlite_release_lock");
@@ -33,16 +31,8 @@ function _mysql2sqlite_connect($conn) {
 	register_shutdown_function("_mysql2sqlite_shutdown_handler");
 }
 
-function _mysql2sqlite_semaphore_file() {
-	return "tmp/sqlite.sem";
-}
-
-function _mysql2sqlite_semaphore_timeout() {
-	return 10000000;
-}
-
 function _mysql2sqlite_shutdown_handler() {
-	_mysql2sqlite_semaphore_release(_mysql2sqlite_semaphore_file());
+	_mysql2sqlite_semaphore_release();
 }
 
 function _mysql2sqlite_get_lock() {
@@ -58,61 +48,59 @@ function _mysql2sqlite_variable_emulation($arg) {
 	return eval("global $var; return $arg;");
 }
 
-function _mysql2sqlite_semaphore_acquire($file,$timeout=100000) {
-	global $_SEMAPHORE;
-	if(!isset($_SEMAPHORE)) $_SEMAPHORE=array();
-	$hash=md5($file);
-	if(!isset($_SEMAPHORE[$hash])) $_SEMAPHORE[$hash]=null;
-	srand((float)microtime(true)*1000000);
-	while($timeout>=0) {
-		if(!$_SEMAPHORE[$hash]) break;
-		$usleep=rand(0,1000);
-		usleep($usleep);
-		$timeout-=$usleep;
-	}
-	if($timeout<0) {
-		return 0;
-	}
-	while($timeout>=0) {
-		$_SEMAPHORE[$hash]=@fopen($file,"a");
-		if($_SEMAPHORE[$hash]) break;
-		$usleep=rand(0,1000);
-		usleep($usleep);
-		$timeout-=$usleep;
-	}
-	if($timeout<0) {
-		return 0;
-	}
-	@chmod($file,0666);
-	@touch($file);
-	while($timeout>=0) {
-		$result=@flock($_SEMAPHORE[$hash],LOCK_EX|LOCK_NB);
-		if($result) break;
-		$usleep=rand(0,1000);
-		usleep($usleep);
-		$timeout-=$usleep;
-	}
-	if($timeout<0) {
-		if($_SEMAPHORE[$hash]) {
-			@fclose($_SEMAPHORE[$hash]);
-			$_SEMAPHORE[$hash]=null;
-		}
-		return 0;
-	}
-	return 1;
+function _mysql2sqlite_semaphore_acquire($file="tmp/sqlite.sem",$timeout=10000000) {
+	return _mysql2sqlite_semaphore_helper(__FUNCTION__,$file,$timeout);
 }
 
-function _mysql2sqlite_semaphore_release($file) {
-	global $_SEMAPHORE;
+function _mysql2sqlite_semaphore_release($file="tmp/sqlite.sem") {
+	return _mysql2sqlite_semaphore_helper(__FUNCTION__,$file,null);
+}
+
+function _mysql2sqlite_semaphore_helper($fn,$file,$timeout) {
+	static $stack=array();
 	$hash=md5($file);
-	if($_SEMAPHORE[$hash]) {
-		@flock($_SEMAPHORE[$hash],LOCK_UN);
-		@fclose($_SEMAPHORE[$hash]);
-		$_SEMAPHORE[$hash]=null;
-	} else {
-		return 0;
+	if(!isset($stack[$hash])) $stack[$hash]=null;
+	if(stripos($fn,"acquire")!==false) {
+		srand((float)microtime(true)*1000000);
+		if($stack[$hash]) return false;
+		while($timeout>=0) {
+			$stack[$hash]=@fopen($file,"a");
+			if(_mysql2sqlite_debug()) _mysql2sqlite_log(getmypid().": open");
+			if($stack[$hash]) break;
+			$timeout-=_mysql2sqlite_usleep(rand(0,1000));
+		}
+		if($timeout<0) {
+			return false;
+		}
+		@chmod($file,0666);
+		@touch($file);
+		while($timeout>=0) {
+			$result=@flock($stack[$hash],LOCK_EX|LOCK_NB);
+			if(_mysql2sqlite_debug()) _mysql2sqlite_log(getmypid().": lock");
+			if($result) break;
+			$timeout-=_mysql2sqlite_usleep(rand(0,1000));
+		}
+		if($timeout<0) {
+			if($stack[$hash]) {
+				@fclose($stack[$hash]);
+				$stack[$hash]=null;
+			}
+			return false;
+		}
+		ftruncate($stack[$hash],0);
+		fwrite($stack[$hash],getmypid());
+		return true;
 	}
-	return 1;
+	if(stripos($fn,"release")!==false) {
+		if(!$stack[$hash]) return false;
+		@flock($stack[$hash],LOCK_UN);
+		if(_mysql2sqlite_debug()) _mysql2sqlite_log(getmypid().": unlock");
+		@fclose($stack[$hash]);
+		if(_mysql2sqlite_debug()) _mysql2sqlite_log(getmypid().": close");
+		$stack[$hash]=null;
+		return true;
+	}
+	return false;
 }
 
 function _mysql2sqlite_group_concat_step($context,$rows,$string,$separator=",") {
@@ -185,16 +173,13 @@ function _mysql2sqlite_md5($temp) {
 }
 
 function _mysql2sqlite_crc32($temp) {
-	return crc32($temp);
+	return sprintf("%u",crc32($temp));
 }
 
 function _mysql2sqlite_convert($sql,$bind) {
-	if(_mysql2sqlite_debug()) {
-		if(is_string($sql)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".$sql."\n",FILE_APPEND);
-		if(is_array($sql)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".print_r($sql,true)."\n",FILE_APPEND);
-		if(is_string($bind)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".$bind."\n",FILE_APPEND);
-		if(is_array($bind)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".print_r($bind,true)."\n",FILE_APPEND);
-	}
+	if(_mysql2sqlite_debug()) _mysql2sqlite_log($sql);
+	if(_mysql2sqlite_debug()) _mysql2sqlite_log($bind);
+	if(!is_array($bind)) $bind=array($bind);
 	if(stripos($sql,"show tables like")!==false) {
 		$sql=str_ireplace("show tables like","select name from sqlite_master where type='table' and name like",$sql);
 		$sql=str_replace("\\_","_",$sql);
@@ -286,12 +271,36 @@ function _mysql2sqlite_convert($sql,$bind) {
 		$limits=array_unique($limits);
 		$sql="SELECT * FROM (".implode(" UNION ",$unions).") ORDER BY ".implode(",",$orders)." LIMIT ".implode(",",$limits);
 	}
-	if(_mysql2sqlite_debug()) {
-		if(is_string($sql)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".$sql."\n",FILE_APPEND);
-		if(is_array($sql)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".print_r($sql,true)."\n",FILE_APPEND);
-		if(is_string($bind)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".$bind."\n",FILE_APPEND);
-		if(is_array($bind)) file_put_contents("log.txt",date("Y-m-d H:i:s").": ".print_r($bind,true)."\n",FILE_APPEND);
-	}
+	if(_mysql2sqlite_debug()) _mysql2sqlite_log($sql);
+	if(_mysql2sqlite_debug()) _mysql2sqlite_log($bind);
 	return array($sql,$bind);
+}
+
+function _mysql2sqlite_usleep($usec) {
+	$socket=socket_create(AF_UNIX,SOCK_STREAM,0);
+	$read=null;
+	$write=null;
+	$except=array($socket);
+	$time1=microtime(true);
+	@socket_select($read,$write,$except,intval($usec/1000000),intval($usec%1000000));
+	$time2=microtime(true);
+	return ($time2-$time1)*1000000;
+}
+
+function _mysql2sqlite_log($data) {
+	if(is_string($data)) {
+		file_put_contents("log.txt",date("Y-m-d H:i:s").": ".$data."\n",FILE_APPEND);
+	}
+	if(is_array($data)) {
+		foreach($data as $key=>$val) {
+			$temp=count_chars($val,1);
+			if(count($temp)) {
+				if(min(array_keys($temp))<32) {
+					$data[$key]="X'".bin2hex($val)."'";
+				}
+			}
+		}
+		file_put_contents("log.txt",date("Y-m-d H:i:s").": ".print_r($data,true)."\n",FILE_APPEND);
+	}
 }
 ?>
