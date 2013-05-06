@@ -4,7 +4,7 @@ function _mysql2sqlite_debug() {
 }
 
 function _mysql2sqlite_connect($conn) {
-	$conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_SILENT);
+	$conn->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
 	$conn->setAttribute(PDO::ATTR_TIMEOUT,0);
 	$conn->query("PRAGMA cache_size=2000");
 	$conn->query("PRAGMA synchronous=OFF");
@@ -231,7 +231,7 @@ function _mysql2sqlite_convert($sql,$bind) {
 		$pos=strrpos($sql,",");
 		$sql=substr_replace($sql,"",$pos,1);
 		$sql=str_ireplace("default charset=utf8","",$sql);
-		$sql=array_merge(array($sql),$indexes);
+		$sql=array_merge(array("BEGIN"),array($sql),$indexes,array("COMMIT"));
 	} elseif(stripos($sql,"select")!==false && stripos($sql,"union")!==false) {
 		$unions=array();
 		$orders=array();

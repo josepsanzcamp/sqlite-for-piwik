@@ -84,12 +84,12 @@ class Piwik_Tracker_Db_Pdo_Sqlite extends Piwik_Tracker_Db
 	public function fetchAll( $query, $parameters = array() )
 	{
 		try {
-			$sth = $this->query( $query, $parameters );
-			if($sth === false)
+			$stmt = $this->query( $query, $parameters );
+			if($stmt === false)
 			{
 				return false;
 			}
-			return $sth->fetchAll(PDO::FETCH_ASSOC);
+			return $stmt->fetchAll(PDO::FETCH_ASSOC);
 		} catch (PDOException $e) {
 			throw new Piwik_Tracker_Db_Exception("Error query: ".$e->getMessage());
 		}
@@ -107,16 +107,18 @@ class Piwik_Tracker_Db_Pdo_Sqlite extends Piwik_Tracker_Db
 	public function fetch( $query, $parameters = array() )
 	{
 		try {
-			$sth = $this->query( $query, $parameters );
-			if($sth === false)
+			$stmt = $this->query( $query, $parameters );
+			if($stmt === false)
 			{
 				return false;
 			}
-			return $sth->fetch(PDO::FETCH_ASSOC);
+			return $stmt->fetch(PDO::FETCH_ASSOC);
 		} catch (PDOException $e) {
 			throw new Piwik_Tracker_Db_Exception("Error query: ".$e->getMessage());
 		}
 	}
+
+	private $cachePreparedStatement = array();
 
 	/**
 	 * Executes a query, using optional bound parameters.
@@ -138,38 +140,43 @@ class Piwik_Tracker_Db_Pdo_Sqlite extends Piwik_Tracker_Db
 			list($sql,$bind)=_mysql2sqlite_convert($sql,$bind);
 		}
 
-		try {
-			if(self::$profiling)
-			{
-				$timer = $this->initProfiler();
+		if(_mysql2sqlite_semaphore_acquire())
+		{
+			$timeout=10000000;
+			while(1) {
+				try {
+					if(self::$profiling) $timer = $this->initProfiler();
+					if(is_array($sql)) {
+						foreach($sql as $query) $stmt=$this->connection->query($query);
+					} elseif(isset($this->cachePreparedStatement[$sql])) {
+						$stmt = $this->cachePreparedStatement[$sql];
+						$stmt->execute($bind);
+					} else {
+						$stmt=$this->connection->prepare($sql);
+						$this->cachePreparedStatement[$sql] = $stmt;
+						$stmt->execute($bind);
+					}
+					if(self::$profiling) $this->recordQueryProfile($sql, $timer);
+					break;
+				} catch (PDOException $e) {
+					if($timeout<=0) {
+						_mysql2sqlite_log("throw: ".$e->getMessage());
+						throw new Exception($e->getMessage());
+					} elseif($this->isErrNo($e,5)) {
+						$timeout-=_mysql2sqlite_usleep(rand(0,1000));
+					} elseif($this->isErrNo($e,17)) {
+						unset($this->cachePreparedStatement[$sql]);
+						$timeout-=_mysql2sqlite_usleep(rand(0,1000));
+					} else {
+						_mysql2sqlite_log("throw: ".$e->getMessage());
+						throw new Exception($e->getMessage());
+					}
+				}
 			}
-
-			if(_mysql2sqlite_semaphore_acquire())
-			{
-				if(is_array($sql))
-				{
-					$sth=$this->connection->prepare(array_shift($sql));
-					$sth->execute($bind);
-					foreach($sql as $query) $this->connection->query($query);
-				}
-				else
-				{
-					$sth=$this->connection->prepare($sql);
-					$sth->execute($bind);
-				}
-				if(self::$profiling)
-				{
-					$this->recordQueryProfile($sql, $timer);
-				}
-				_mysql2sqlite_semaphore_release();
-				return $sth;
-			}
-			throw new Exception("Can not acquire semaphore");
-		} catch (PDOException $e) {
-			throw new Piwik_Tracker_Db_Exception("Error query: ".$e->getMessage() . "
-								In query: $sql
-								Parameters: ".var_export($bind, true));
+			_mysql2sqlite_semaphore_release();
+			return $stmt;
 		}
+		throw new Exception("Can not acquire semaphore");
 	}
 
 	/**
@@ -192,11 +199,14 @@ class Piwik_Tracker_Db_Pdo_Sqlite extends Piwik_Tracker_Db
 	 */
 	public function isErrNo($e, $errno)
 	{
-		if(preg_match('/([0-9]{4})/', $e->getMessage(), $match))
-		{
-			return $match[1] == $errno;
-		}
-		return false;
+		if(!is_array($errno)) $errno=array($errno);
+		$error=$e->getMessage();
+		$error=explode(":",$error);
+		$error=array_pop($error);
+		$error=trim($error);
+		$error=explode(" ",$error);
+		$error=array_shift($error);
+		return in_array($error,$errno);
 	}
 
 	/**

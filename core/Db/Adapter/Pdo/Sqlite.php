@@ -124,11 +124,14 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 	 */
 	public function isErrNo($e, $errno)
 	{
-		if(preg_match('/(?:\[|\s)([0-9]{4})(?:\]|\s)/', $e->getMessage(), $match))
-		{
-			return $match[1] == $errno;
-		}
-		return false;
+		if(!is_array($errno)) $errno=array($errno);
+		$error=$e->getMessage();
+		$error=explode(":",$error);
+		$error=array_pop($error);
+		$error=trim($error);
+		$error=explode(" ",$error);
+		$error=array_shift($error);
+		return in_array($error,$errno);
 	}
 
 	/**
@@ -160,22 +163,34 @@ class Piwik_Db_Adapter_Pdo_Sqlite extends Zend_Db_Adapter_Pdo_Sqlite implements 
 
 		if(_mysql2sqlite_semaphore_acquire())
 		{
-			if(is_array($sql))
-			{
-				$stmt=parent::prepare(array_shift($sql));
-				$stmt->execute($bind);
-				foreach($sql as $query) parent::query($query);
-			}
-			elseif(isset($this->cachePreparedStatement[$sql]))
-			{
-				$stmt = $this->cachePreparedStatement[$sql];
-				$stmt->execute($bind);
-			}
-			else
-			{
-				$stmt=parent::prepare($sql);
-				$this->cachePreparedStatement[$sql] = $stmt;
-				$stmt->execute($bind);
+			$timeout=10000000;
+			while(1) {
+				try {
+					if(is_array($sql)) {
+						foreach($sql as $query) $stmt=$this->_connection->query($query);
+					} elseif(isset($this->cachePreparedStatement[$sql])) {
+						$stmt = $this->cachePreparedStatement[$sql];
+						$stmt->execute($bind);
+					} else {
+						$stmt=$this->_connection->prepare($sql);
+						$this->cachePreparedStatement[$sql] = $stmt;
+						$stmt->execute($bind);
+					}
+					break;
+				} catch (PDOException $e) {
+					if($timeout<=0) {
+						_mysql2sqlite_log("throw: ".$e->getMessage());
+						throw new Exception($e->getMessage());
+					} elseif($this->isErrNo($e,5)) {
+						$timeout-=_mysql2sqlite_usleep(rand(0,1000));
+					} elseif($this->isErrNo($e,17)) {
+						unset($this->cachePreparedStatement[$sql]);
+						$timeout-=_mysql2sqlite_usleep(rand(0,1000));
+					} else {
+						_mysql2sqlite_log("throw: ".$e->getMessage());
+						throw new Exception($e->getMessage());
+					}
+				}
 			}
 			_mysql2sqlite_semaphore_release();
 			return $stmt;
